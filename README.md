@@ -38,9 +38,21 @@ Default is local Ollama (`provider = "ollama"`). Start Ollama and pull a model, 
 
 If the provider is unreachable, the pet falls back to rule-based behaviour.
 
-### Sprites
+### Sprites (Cat 85+)
 
-Put a Bow.Pixel-compatible sheet + manifest under `assets/bowpixel/` (see `assets/README.md`).
+This project expects **Bow.Pixel «Cat 85+»** art. It is **not** bundled — download it yourself:
+
+1. Open https://bowpixel.itch.io/meow-cat-85-animation  
+2. Download / unzip **Meow - Cat 85+ Animation**  
+3. Copy e.g. `Cat_Ginger.png` → `assets/bowpixel/Cat_Ginger.png`  
+4. Manifest:
+
+```bash
+cp assets/bowpixel/anim_manifest.ginger.example.yaml \
+   assets/bowpixel/anim_manifest.yaml
+```
+
+Details: [`assets/README.md`](assets/README.md) and [`assets/bowpixel/README.md`](assets/bowpixel/README.md).
 
 ## Run
 
