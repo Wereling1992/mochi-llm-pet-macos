@@ -19,3 +19,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+This project is a macOS port derived from
+[NatBrian/mochi-llm-pet](https://github.com/NatBrian/mochi-llm-pet).
+Sprite art (e.g. Bow.Pixel) is subject to its own license and may not be
+included or redistributed with this repository.
