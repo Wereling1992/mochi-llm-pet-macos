@@ -1,0 +1,22 @@
+# Placeholder cat — replace with Bow.Pixel Cat 85+ for real art
+sheet: placeholder_cat.png
+frame_size: [32, 32]
+columns: 4
+default_fps: 8
+states:
+  Idle_1: { from: 0, to: 3, fps: 6.0, loop: true }
+  W_1: { from: 4, to: 7, fps: 10.0, loop: true }
+  Sit_1: { from: 8, to: 11, fps: 5.0, loop: true }
+  Dream: { from: 8, to: 11, fps: 3.0, loop: true }
+  Fall: { from: 4, to: 4, fps: 10.0, loop: false }
+  Attack_1: { from: 4, to: 7, fps: 14.0, loop: false }
+aliases:
+  idle: Idle_1
+  walk: W_1
+  run: W_1
+  sit: Sit_1
+  sleep: Dream
+  fall: Fall
+  pounce: Attack_1
+  happy: Idle_1
+  watch: Sit_1

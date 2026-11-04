@@ -1,0 +1,174 @@
+"""Robust extraction of an Intent from whatever a model returns.
+
+Treats EVERY response as untrusted: strips reasoning/markdown noise, finds the
+first balanced JSON object even amid trailing prose, then coerces fields back to
+the closed enum vocabularies. `safe_parse` never raises — bad input degrades to
+an idle Intent so the body can never be crashed by the brain.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any, Optional
+
+from ..types import Emotion, Intent, Vec2, Verb
+from .schema import EMOTIONS, VERBS
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+
+class IntentParseError(ValueError):
+    pass
+
+
+def _strip_noise(text: str) -> str:
+    text = _THINK_RE.sub("", text)
+    # If fenced, prefer the fenced content.
+    m = _FENCE_RE.search(text)
+    if m:
+        return m.group(1).strip()
+    return text.strip()
+
+
+def _first_json_object(text: str) -> Optional[str]:
+    """Scan for the first balanced {...}, respecting strings/escapes."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+    return None
+
+
+def extract_json(raw: str) -> dict:
+    """Locate and parse the JSON object from raw model text. Raises on failure."""
+    cleaned = _strip_noise(raw)
+    blob = _first_json_object(cleaned)
+    if blob is None:
+        # maybe the whole thing is already JSON
+        blob = cleaned
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError as e:
+        raise IntentParseError(f"no valid JSON object found: {e}") from e
+    if not isinstance(data, dict):
+        raise IntentParseError("parsed JSON is not an object")
+    return data
+
+
+def _coerce_enum(value: Any, allowed: list[str], default: str) -> str:
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in allowed:
+            return v
+        # tolerate near-misses like "walk" -> "walk_to"
+        for a in allowed:
+            if a.startswith(v) or v.startswith(a):
+                return a
+    return default
+
+
+def _coerce_point(value: Any) -> Optional[Vec2]:
+    if isinstance(value, dict) and "x" in value and "y" in value:
+        try:
+            return Vec2(float(value["x"]), float(value["y"]))
+        except (TypeError, ValueError):
+            return None
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        try:
+            return Vec2(float(value[0]), float(value[1]))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _clean_str(value: Any, limit: int) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    value = value.strip()
+    if not value or value.lower() in ("null", "none"):
+        return None
+    return value[:limit]
+
+
+def _pet_say(value: Any) -> Optional[str]:
+    """Clean the spoken line, then drop it entirely if it reads as an AI
+    assistant (offering help / claiming abilities) — a cat stays silent instead."""
+    from .speech import sounds_like_assistant
+
+    text = _clean_str(value, 220)
+    if text and sounds_like_assistant(text):
+        return None
+    return text
+
+
+def _coerce_emote(value: Any) -> Optional[str]:
+    """Keep an emote only if it's a known token (closed vocabulary)."""
+    from ..sprite.expressions import EMOTE_TOKENS
+
+    if not isinstance(value, str):
+        return None
+    tok = value.strip().lower().replace(" ", "_").replace("-", "_")
+    return tok if tok in EMOTE_TOKENS else None
+
+
+def coerce_intent(data: dict) -> Intent:
+    """Turn a raw dict into a valid Intent, filling/clamping every field."""
+    verb = Verb(_coerce_enum(data.get("verb"), VERBS, "idle"))
+    emotion = Emotion(_coerce_enum(data.get("emotion"), EMOTIONS, "neutral"))
+
+    edge = data.get("edge")
+    if isinstance(edge, str):
+        edge = edge.strip().lower()
+        if edge not in ("top", "bottom", "left", "right"):
+            edge = None
+    else:
+        edge = None
+
+    # The LLM's only job is controlling the pet, so it emits just these fields.
+    # point/remember/duration/confidence are handled by code, not the model —
+    # they keep their Intent defaults. (point is still parsed if a tool/test
+    # supplies it, but the LLM is never asked for it.)
+    return Intent(
+        verb=verb,
+        target=_clean_str(data.get("target"), 80),
+        point=_coerce_point(data.get("point")),
+        edge=edge,
+        emotion=emotion,
+        emote=_coerce_emote(data.get("emote")),
+        say=_pet_say(data.get("say")),
+        thought=_clean_str(data.get("thought"), 200) or "",
+    )
+
+
+def safe_parse(raw: str | dict) -> Intent:
+    """Never raises. Anything unparseable -> a low-confidence idle Intent."""
+    try:
+        data = raw if isinstance(raw, dict) else extract_json(raw)
+        return coerce_intent(data)
+    except Exception:  # noqa: BLE001 — by design, the body must never crash
+        return Intent(verb=Verb.IDLE, emotion=Emotion.NEUTRAL, confidence=0.0,
+                      thought="(unparseable model output)")
